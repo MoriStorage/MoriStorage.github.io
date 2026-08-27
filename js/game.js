@@ -1,7 +1,7 @@
-// js/game.js — Phaser 3 demo: walk, NPC, dialogue, simple menu
+// js/game.js — Expanded Phaser 3 demo: multiple NPCs, dialogue queue, collectible item, inventory
 const TILE = 32;
-const MAP_W = 25;
-const MAP_H = 15;
+const MAP_W = 30;
+const MAP_H = 20;
 
 class MainScene extends Phaser.Scene {
   constructor(){ super('MainScene'); }
@@ -26,13 +26,23 @@ class MainScene extends Phaser.Scene {
     g.fillStyle(0xff9f43,1); g.fillCircle(TILE/2,TILE/2,TILE/2 - 2); g.generateTexture('npc',TILE - 4,TILE - 4);
     g.clear();
 
-    // small font using DOM later; no external assets required
+    // npc variant (pink)
+    g.fillStyle(0xff6b9f,1); g.fillCircle(TILE/2,TILE/2,TILE/2 - 2); g.generateTexture('npc2',TILE - 4,TILE - 4);
+    g.clear();
+
+    // item (star-like circle)
+    g.fillStyle(0xffe66d,1); g.fillCircle(TILE/2,TILE/2,8); g.generateTexture('item',16,16);
+    g.clear();
+
+    // toast background
+    g.fillStyle(0x000000,0.7); g.fillRoundedRect(0,0,220,34,6); g.generateTexture('toastBg',220,34);
+    g.clear();
   }
 
   create(){
     this.cameras.main.setBackgroundColor('#88b36b');
 
-    // simple tile map array: 0 ground, 1 wall
+    // tile map array: 0 ground, 1 wall
     this.map = [];
     for(let y=0;y<MAP_H;y++){
       this.map[y]=[];
@@ -42,9 +52,10 @@ class MainScene extends Phaser.Scene {
         else this.map[y][x]=0;
       }
     }
-    // add some inner walls
-    for(let x=4;x<10;x++) this.map[6][x]=1;
-    for(let y=3;y<9;y++) this.map[y][12]=1;
+    // add some inner walls to create corridors
+    for(let x=4;x<14;x++) this.map[7][x]=1;
+    for(let y=5;y<14;y++) this.map[y][15]=1;
+    for(let x=10;x<22;x++) this.map[12][x]=1;
 
     // draw tiles as static group with physics bodies for walls
     this.walls = this.physics.add.staticGroup();
@@ -67,14 +78,45 @@ class MainScene extends Phaser.Scene {
     this.player.body.setOffset(2,2);
     this.player.speed = 120;
 
-    // npc
-    this.npc = this.physics.add.staticSprite(TILE*8 + TILE/2, TILE*4 + TILE/2, 'npc');
+    // NPCs: create an array of npc descriptors (position + dialogue array)
+    this.npcs = [];
+    const npcDefs = [
+      {x: TILE*8 + TILE/2, y: TILE*4 + TILE/2, key: 'npc', name: 'Old Fisher', lines:[
+        "Hey there, stranger! The lake is calm today.",
+        "I once caught a very big fish — or so I say..."
+      ]},
+      {x: TILE*18 + TILE/2, y: TILE*6 + TILE/2, key: 'npc2', name: 'Baker', lines:[
+        "Fresh bread today! Would you like some?",
+        "I heard there's an item hidden under a rock near the big tree."
+      ]},
+      {x: TILE*20 + TILE/2, y: TILE*14 + TILE/2, key: 'npc', name: 'Traveler', lines:[
+        "I travel far and wide. This town is peaceful.",
+        "Safe travels to you."
+      ]}
+    ];
 
-    // collisions
+    this.npcGroup = this.physics.add.staticGroup();
+    npcDefs.forEach((d, i)=>{
+      const s = this.physics.add.staticSprite(d.x, d.y, d.key);
+      s.setData('name', d.name);
+      s.setData('lines', d.lines.slice()); // copy
+      s.setData('id', i);
+      this.npcGroup.add(s);
+      this.npcs.push(s);
+    });
+
+    // collision
     this.physics.add.collider(this.player, this.walls);
 
-    // overlap for talking
-    this.physics.add.overlap(this.player, this.npc, ()=>{ this.showDialogue("Hello! I'm a friendly NPC. Press Z to continue."); }, null, this);
+    // items (collectibles)
+    this.items = this.physics.add.staticGroup();
+    const item = this.physics.add.staticSprite(TILE*14 + TILE/2, TILE*10 + TILE/2, 'item');
+    item.setData('type','coin');
+    item.setData('value',1);
+    this.items.add(item);
+
+    // inventory
+    this.inventory = { coin: 0 };
 
     // camera
     this.cameras.main.startFollow(this.player, true, 0.08,0.08);
@@ -86,28 +128,47 @@ class MainScene extends Phaser.Scene {
     this.keyM = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
 
     // UI: dialogue text and menu
-    this.dialogueBox = this.add.rectangle(10, 10, 300, 70, 0x222222, 0.9).setOrigin(0).setScrollFactor(0).setVisible(false);
-    this.dialogueText = this.add.text(18, 18, '', {font:'14px monospace',fill:'#fff',wordWrap:{width:270}}).setScrollFactor(0).setVisible(false);
+    this.dialogueBox = this.add.rectangle(10, 10, 380, 90, 0x222222, 0.95).setOrigin(0).setScrollFactor(0).setVisible(false);
+    this.dialogueText = this.add.text(18, 18, '', {font:'14px monospace',fill:'#fff',wordWrap:{width:350}}).setScrollFactor(0).setVisible(false);
+    this.dialogueName = this.add.text(18, 8, '', {font:'12px monospace',fill:'#ffd37a'}).setScrollFactor(0).setVisible(false);
 
     this.menuOpen = false;
-    this.menuBox = this.add.rectangle(10, 90, 220, 120, 0x101010, 0.95).setOrigin(0).setScrollFactor(0).setVisible(false);
-    this.menuText = this.add.text(18, 100, 'Menu\n- Inventory (empty)\n- Save (demo)', {font:'14px monospace',fill:'#fff'}).setScrollFactor(0).setVisible(false);
+    this.menuBox = this.add.rectangle(10, 110, 260, 160, 0x101010, 0.95).setOrigin(0).setScrollFactor(0).setVisible(false);
+    this.menuText = this.add.text(18, 120, '', {font:'14px monospace',fill:'#fff'}).setScrollFactor(0).setVisible(false);
 
-    // on Z press when dialogue visible, hide
+    // toast for pickup
+    this.toast = this.add.container(0,0).setScrollFactor(0).setVisible(false);
+    const bg = this.add.image(0,0,'toastBg').setOrigin(0);
+    const toastText = this.add.text(12,6,'', {font:'13px monospace',fill:'#fff'});
+    this.toast.add([bg, toastText]);
+    this.toast.setPosition(10, 280);
+    this._toastText = toastText;
+
+    // dialogue queue state
+    this.dialogueQueue = null; // {name, lines, index}
+
+    // Z key behavior: advance/hide dialogue OR start dialogue OR pick up item
     this.keyZ.on('down', ()=>{
-      if(this.dialogueBox.visible) { this.hideDialogue(); }
-      else {
-        // if near npc open dialogue
-        const dist = Phaser.Math.Distance.Between(this.player.x,this.player.y,this.npc.x,this.npc.y);
-        if(dist < 44) this.showDialogue("Nice to meet you. This is a small demo built with Phaser 3.");
+      if(this.dialogueQueue){
+        this.advanceDialogue();
+        return;
       }
+      // check nearest NPC within range
+      const npc = this.findNearbyNPC(48);
+      if(npc){
+        this.startDialogue(npc.getData('name'), npc.getData('lines'));
+        return;
+      }
+      // check nearby item
+      const found = this.findNearbyItem(32);
+      if(found){ this.pickupItem(found); return; }
     });
 
     // menu toggle
     this.keyM.on('down', ()=>{ this.toggleMenu(); });
 
     // instructions overlay
-    this.instructions = this.add.text(8,8, 'Arrows: Move   Z: Talk   M: Menu', {font:'12px monospace',fill:'#fff'}).setScrollFactor(0);
+    this.instructions = this.add.text(8,8, 'Arrows: Move   Z: Talk/Pickup   M: Menu', {font:'12px monospace',fill:'#fff'}).setScrollFactor(0);
   }
 
   update(time,dt){
@@ -120,22 +181,91 @@ class MainScene extends Phaser.Scene {
     else if(this.cursors.down.isDown) vy = speed;
     this.player.setVelocity(vx,vy);
 
-    // small frictionless diagonal speed normalization
+    // diagonal normalization
     if(vx!==0 && vy!==0){ this.player.setVelocity(vx*0.7071, vy*0.7071); }
   }
 
-  showDialogue(text){
+  // helpers
+  findNearbyNPC(range){
+    let nearest = null; let dist = Infinity;
+    this.npcs.forEach(n => {
+      const d = Phaser.Math.Distance.Between(this.player.x,this.player.y,n.x,n.y);
+      if(d < range && d < dist){ nearest = n; dist = d; }
+    });
+    return nearest;
+  }
+  findNearbyItem(range){
+    let found = null; let dist = Infinity;
+    this.items.getChildren().forEach(it => {
+      const d = Phaser.Math.Distance.Between(this.player.x,this.player.y,it.x,it.y);
+      if(d < range && d < dist){ found = it; dist = d; }
+    });
+    return found;
+  }
+
+  startDialogue(name, lines){
+    // copy lines to avoid mutating original
+    this.dialogueQueue = { name, lines: lines.slice(), index: 0 };
+    this.showDialogueLine();
+  }
+  showDialogueLine(){
+    if(!this.dialogueQueue) return;
+    const { name, lines, index } = this.dialogueQueue;
+    const text = lines[index] || '';
+    this.dialogueName.setText(name).setVisible(true);
     this.dialogueBox.setVisible(true);
     this.dialogueText.setText(text).setVisible(true);
   }
-  hideDialogue(){
+  advanceDialogue(){
+    if(!this.dialogueQueue) return;
+    this.dialogueQueue.index += 1;
+    if(this.dialogueQueue.index >= this.dialogueQueue.lines.length){
+      this.endDialogue();
+    } else {
+      this.showDialogueLine();
+    }
+  }
+  endDialogue(){
+    this.dialogueQueue = null;
     this.dialogueBox.setVisible(false);
     this.dialogueText.setVisible(false);
+    this.dialogueName.setVisible(false);
   }
+
+  pickupItem(item){
+    const type = item.getData('type');
+    const val = item.getData('value') || 1;
+    if(type === 'coin'){
+      this.inventory.coin += val;
+      // remove item
+      item.destroy();
+      this.showToast(`Picked up a coin!   Total: ${this.inventory.coin}`);
+      // update menu text if open
+      if(this.menuOpen) this.updateMenuText();
+    }
+  }
+
+  showToast(text, duration=1800){
+    this._toastText.setText(text);
+    this.toast.setVisible(true);
+    if(this._toastTimer) this._toastTimer.remove();
+    this._toastTimer = this.time.delayedCall(duration, ()=>{ this.toast.setVisible(false); }, [], this);
+  }
+
   toggleMenu(){
     this.menuOpen = !this.menuOpen;
     this.menuBox.setVisible(this.menuOpen);
     this.menuText.setVisible(this.menuOpen);
+    if(this.menuOpen) this.updateMenuText();
+  }
+  updateMenuText(){
+    const lines = [];
+    lines.push('Menu');
+    lines.push('----');
+    lines.push(`Coins: ${this.inventory.coin}`);
+    lines.push('Inventory: (demo)');
+    lines.push('\nControls: Arrows, Z, M');
+    this.menuText.setText(lines.join('\n'));
   }
 }
 
