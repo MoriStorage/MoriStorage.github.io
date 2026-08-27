@@ -2,30 +2,14 @@
 <html>
 <head>
     <title>MoriStorage</title>
+    <style>
+        h1 {
+            color: red;
+            background-color: black;
+        }
+    </style>
 </head>
 <body>
     <h1>Welcome to MoriStorage</h1>
 </body>
 </html>
-
-<style>
-  body {
-    /* Smooth gradient from dark red at the top to pitch black at the bottom */
-    background: linear-gradient(135deg, #4a0000 0%, #000000 100%);
-    color: #ffffff;
-    font-family: sans-serif;
-    margin: 40px;
-    min-height: 100vh; /* Ensures the gradient spans the full screen height */
-  }
-
-  h1, h2 {
-    color: #ff4d4d;           /* Vibrant red/coral text to pop against the dark gradient */
-    border-bottom: 1px solid #441111;
-    padding-bottom: 10px;
-  }
-
-  a {
-    color: #ff8080;
-    text-decoration: none;
-  }
-</style>
