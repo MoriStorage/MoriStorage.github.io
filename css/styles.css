@@ -1,0 +1,11 @@
+/* styles.css — simple layout */
+:root{--bg:#f5f7fb;--card:#ffffff;--accent:#2b7cff;--muted:#666}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+body{background:linear-gradient(180deg,var(--bg),#e9eef7);display:flex;align-items:flex-start;justify-content:center;padding:28px}
+main{width:960px;max-width:96%;background:var(--card);padding:18px;border-radius:10px;box-shadow:0 6px 18px rgba(18,30,70,0.08)}
+h1{margin:0 0 8px;font-size:20px}
+.hint{margin:0 0 12px;color:var(--muted)}
+#game-container{width:800px;height:480px;max-width:100%;background:#111;border-radius:6px;overflow:hidden}
+.credits{margin:10px 0 0;color:var(--muted);font-size:13px}
+@media (max-width:640px){#game-container{height:360px}}
